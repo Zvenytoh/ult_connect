@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ult_connect/file_manager_page.dart';
 import 'digital_identity_page.dart';
 import 'host_page.dart';
 import 'find_host_page.dart';
@@ -90,6 +91,30 @@ class HomePage extends StatelessWidget {
                       Icon(Icons.search, size: 40),
                       SizedBox(height: 10),
                       Text('Trouver un Host', style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 250,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => FileManagerPage()),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Icon(Icons.computer, size: 40),
+                      SizedBox(height: 10),
+                      Text('FICHIER MA GUEULE', style: TextStyle(fontSize: 16)),
                     ],
                   ),
                 ),
