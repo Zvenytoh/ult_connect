@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'digital_identity_page.dart';
 import 'host_page.dart';
 import 'find_host_page.dart';
+import 'convert_to_pdf.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -90,6 +91,34 @@ class HomePage extends StatelessWidget {
                       Icon(Icons.search, size: 40),
                       SizedBox(height: 10),
                       Text('Trouver un Host', style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 30),
+            
+            // NOUVEAU BOUTON : Convertisseur PDF
+            SizedBox(
+              width: 250,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => PdfConverterPage()),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Icon(Icons.picture_as_pdf, size: 40),
+                      SizedBox(height: 10),
+                      Text('Convertisseur PDF', style: TextStyle(fontSize: 16)),
                     ],
                   ),
                 ),
