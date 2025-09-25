@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ult_connect/add_server.dart';
 import 'package:ult_connect/file_manager_page.dart';
 import 'digital_identity_page.dart';
 import 'host_page.dart';
@@ -18,6 +19,27 @@ class HomePage extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+
+            SizedBox(
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => AddServer()),
+                  );
+                },
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Text('+', style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+
             // Bouton Identité Numérique
             SizedBox(
               width: 250,
