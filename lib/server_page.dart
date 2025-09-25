@@ -40,20 +40,17 @@ class _ServerPageState extends State<ServerPage> {
 
         if (request.method == 'POST' && request.uri.path == '/upload') {
           try {
-            // Lire les bytes envoyés
             final bytes = await request.fold<List<int>>(
               [],
               (prev, element) => prev..addAll(element),
             );
 
-            // Extraire le nom de fichier depuis les headers si dispo
             final contentDisp = request.headers.value('content-disposition');
             String filename = 'file_${DateTime.now().millisecondsSinceEpoch}';
             if (contentDisp != null && contentDisp.contains('filename=')) {
               filename = contentDisp.split('filename=')[1].replaceAll('"', '');
             }
 
-            // Sauvegarde du fichier
             final file = File(path.join(storageDir, filename));
             await file.writeAsBytes(bytes);
 
@@ -68,7 +65,6 @@ class _ServerPageState extends State<ServerPage> {
             await request.response.close();
           }
         } else if (request.method == 'GET' && request.uri.path == '/files') {
-          // Liste des fichiers
           request.response
             ..headers.contentType = ContentType.json
             ..write(jsonEncode(_files));
@@ -81,12 +77,14 @@ class _ServerPageState extends State<ServerPage> {
     } catch (e) {
       _addLog("❌ Erreur serveur: $e");
     }
+    setState(() {});
   }
 
   Future<void> _stopServer() async {
     await _server?.close(force: true);
     _server = null;
     _addLog("🛑 Serveur arrêté");
+    setState(() {});
   }
 
   Future<void> _updateFilesList() async {
@@ -120,44 +118,124 @@ class _ServerPageState extends State<ServerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isRunning = _server != null;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Serveur")),
+      appBar: AppBar(
+        title: const Text("Serveur local"),
+        backgroundColor: isRunning ? Colors.green : Colors.red,
+      ),
       body: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            Row(
-              children: [
-                ElevatedButton(
-                  onPressed: _startServer,
-                  child: const Text("Démarrer"),
+            // --- État du serveur ---
+            Card(
+              color: isRunning ? Colors.green.shade100 : Colors.red.shade100,
+              child: ListTile(
+                leading: Icon(
+                  isRunning ? Icons.check_circle : Icons.cancel,
+                  color: isRunning ? Colors.green : Colors.red,
                 ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _stopServer,
-                  child: const Text("Arrêter"),
+                title: Text(
+                  isRunning ? "Serveur en ligne" : "Serveur arrêté",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isRunning ? Colors.green[900] : Colors.red[900],
+                  ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text("Logs:", style: TextStyle(fontWeight: FontWeight.bold)),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _logs.length,
-                itemBuilder: (context, index) =>
-                    ListTile(title: Text(_logs[index])),
+                subtitle: isRunning
+                    ? FutureBuilder<String>(
+                        future: _getLocalIp(),
+                        builder: (context, snapshot) {
+                          return Text(
+                            snapshot.hasData
+                                ? "Adresse: http://${snapshot.data}:8080"
+                                : "Chargement...",
+                          );
+                        },
+                      )
+                    : const Text("Appuyez sur Démarrer pour lancer le serveur"),
+                trailing: ElevatedButton.icon(
+                  onPressed: isRunning ? _stopServer : _startServer,
+                  icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
+                  label: Text(isRunning ? "Arrêter" : "Démarrer"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isRunning ? Colors.red : Colors.green,
+                  ),
+                ),
               ),
             ),
-            const Divider(),
-            const Text(
-              "Fichiers reçus:",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            const SizedBox(height: 12),
+
+            // --- Logs ---
             Expanded(
-              child: ListView.builder(
-                itemCount: _files.length,
-                itemBuilder: (context, index) =>
-                    ListTile(title: Text(_files[index])),
+              flex: 2,
+              child: Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const ListTile(
+                      leading: Icon(Icons.list_alt),
+                      title: Text(
+                        "Logs",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: _logs.isEmpty
+                          ? const Center(
+                              child: Text("Aucun log pour le moment"),
+                            )
+                          : ListView.builder(
+                              itemCount: _logs.length,
+                              itemBuilder: (context, index) => ListTile(
+                                dense: true,
+                                title: Text(
+                                  _logs[index],
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // --- Fichiers reçus ---
+            Expanded(
+              flex: 2,
+              child: Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const ListTile(
+                      leading: Icon(Icons.folder),
+                      title: Text(
+                        "Fichiers reçus",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: _files.isEmpty
+                          ? const Center(
+                              child: Text("Aucun fichier reçu pour le moment"),
+                            )
+                          : ListView.builder(
+                              itemCount: _files.length,
+                              itemBuilder: (context, index) => ListTile(
+                                leading: const Icon(Icons.insert_drive_file),
+                                title: Text(_files[index]),
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

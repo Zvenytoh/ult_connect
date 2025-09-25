@@ -34,7 +34,6 @@ class _ClientPageState extends State<ClientPage> {
       final uri = Uri.parse("http://$ip:$port/upload");
       final request = http.MultipartRequest('POST', uri);
 
-      // Garder le nom original du fichier
       request.files.add(
         await http.MultipartFile.fromPath(
           'file',
@@ -45,7 +44,7 @@ class _ClientPageState extends State<ClientPage> {
 
       final response = await request.send();
       final respBody = await response.stream.bytesToString();
-      _addLog(respBody);
+      _addLog("✅ $respBody");
 
       _listServerFiles();
     } catch (e) {
@@ -81,44 +80,128 @@ class _ClientPageState extends State<ClientPage> {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            TextField(
-              controller: _ipController,
-              decoration: const InputDecoration(labelText: "IP du serveur"),
-            ),
-            TextField(
-              controller: _portController,
-              decoration: const InputDecoration(labelText: "Port"),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _pickAndSendFile,
-              child: const Text("Envoyer un fichier"),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _listServerFiles,
-              child: const Text("Lister les fichiers serveur"),
-            ),
-            const Divider(),
-            const Text(
-              "Fichiers sur serveur:",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _serverFiles.length,
-                itemBuilder: (context, index) =>
-                    ListTile(title: Text(_serverFiles[index])),
+            // --- Connexion au serveur ---
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    const ListTile(
+                      leading: Icon(Icons.cloud),
+                      title: Text(
+                        "Connexion au serveur",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    TextField(
+                      controller: _ipController,
+                      decoration: const InputDecoration(
+                        labelText: "IP du serveur",
+                        prefixIcon: Icon(Icons.lan),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _portController,
+                      decoration: const InputDecoration(
+                        labelText: "Port",
+                        prefixIcon: Icon(Icons.numbers),
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _pickAndSendFile,
+                          icon: const Icon(Icons.upload_file),
+                          label: const Text("Envoyer un fichier"),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _listServerFiles,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text("Lister fichiers"),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-            const Divider(),
-            const Text("Logs:", style: TextStyle(fontWeight: FontWeight.bold)),
+
+            const SizedBox(height: 12),
+
+            // --- Fichiers serveur ---
             Expanded(
-              child: ListView.builder(
-                itemCount: _logs.length,
-                itemBuilder: (context, index) =>
-                    ListTile(title: Text(_logs[index])),
+              flex: 2,
+              child: Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const ListTile(
+                      leading: Icon(Icons.folder),
+                      title: Text(
+                        "Fichiers sur le serveur",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: _serverFiles.isEmpty
+                          ? const Center(
+                              child: Text("Aucun fichier disponible"),
+                            )
+                          : ListView.builder(
+                              itemCount: _serverFiles.length,
+                              itemBuilder: (context, index) => ListTile(
+                                leading: const Icon(Icons.insert_drive_file),
+                                title: Text(_serverFiles[index]),
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // --- Logs ---
+            Expanded(
+              flex: 2,
+              child: Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const ListTile(
+                      leading: Icon(Icons.list_alt),
+                      title: Text(
+                        "Logs",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: _logs.isEmpty
+                          ? const Center(
+                              child: Text("Aucun log pour le moment"),
+                            )
+                          : ListView.builder(
+                              itemCount: _logs.length,
+                              itemBuilder: (context, index) => ListTile(
+                                dense: true,
+                                title: Text(
+                                  _logs[index],
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
