@@ -412,7 +412,7 @@ class _PdfConverterPageState extends State<PdfConverterPage> {
       
       // Limiter la taille pour les très gros fichiers
       if (content.length > 100000) {
-        content = content.substring(0, 100000) + '\n\n... (contenu tronqué)';
+        content = '${content.substring(0, 100000)}\n\n... (contenu tronqué)';
       }
 
       final PdfPage contentPage = document.pages.add();

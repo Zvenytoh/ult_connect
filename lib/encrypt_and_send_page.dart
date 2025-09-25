@@ -1,14 +1,19 @@
-import 'dart:io';
+import 'dart:io'
+    show File, Directory; // pas dispo en web mais protégé par kIsWeb
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:convert';
-
+import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart' hide Key;
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:encrypt/encrypt.dart';
 import 'package:crypto/crypto.dart';
 import 'package:open_file/open_file.dart';
+
+// Import web uniquement
+import 'dart:html' as html;
 
 class EncryptAndSendPage extends StatefulWidget {
   const EncryptAndSendPage({super.key});
@@ -22,6 +27,7 @@ class _EncryptAndSendPageState extends State<EncryptAndSendPage> {
   String? _selectedName;
   String? _processedFilePath;
   bool _isProcessing = false;
+  bool _isEncryptedFile = false; // Nouveau: pour détecter si c'est un fichier chiffré
   final TextEditingController _passCtrl = TextEditingController();
 
   @override
@@ -43,24 +49,30 @@ class _EncryptAndSendPageState extends State<EncryptAndSendPage> {
           children: [
             ElevatedButton.icon(
               icon: const Icon(Icons.attach_file),
-              label: const Text('Sélectionner un fichier à chiffrer'),
-              onPressed: _isProcessing ? null : () => _pickFile(toEncrypt: true),
+              label: const Text('Sélectionner un fichier'),
+              onPressed: _isProcessing ? null : () => _pickFile(),
             ),
             const SizedBox(height: 10),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.lock_open),
-              label: const Text('Sélectionner un fichier .enc à déchiffrer'),
-              onPressed: _isProcessing ? null : () => _pickFile(toEncrypt: false),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-            ),
-            const SizedBox(height: 12),
             if (_selectedName != null)
               Card(
                 child: ListTile(
-                  leading: const Icon(Icons.insert_drive_file),
+                  leading: Icon(
+                    _isEncryptedFile ? Icons.lock : Icons.insert_drive_file,
+                    color: _isEncryptedFile ? Colors.orange : Colors.blue,
+                  ),
                   title: Text(_selectedName!),
-                  subtitle: Text(
-                    'Taille: ${(_selectedBytes!.length / 1024).toStringAsFixed(2)} KB',
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Taille: ${(_selectedBytes!.length / 1024).toStringAsFixed(2)} KB',
+                      ),
+                      if (_isEncryptedFile)
+                        const Text(
+                          '🔒 Fichier chiffré détecté',
+                          style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                        ),
+                    ],
                   ),
                   trailing: IconButton(
                     icon: const Icon(Icons.clear, color: Colors.red),
@@ -74,39 +86,86 @@ class _EncryptAndSendPageState extends State<EncryptAndSendPage> {
               obscureText: true,
               decoration: const InputDecoration(
                 labelText: 'Phrase secrète',
-                helperText: 'Doit être la même pour chiffrer/déchiffrer',
                 border: OutlineInputBorder(),
+                hintText: 'Entrez la même phrase pour chiffrer/déchiffrer',
               ),
             ),
             const SizedBox(height: 12),
             if (_selectedBytes != null)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.play_circle),
-                  label: const Text('Lancer l\'opération'),
-                  onPressed: _isProcessing ? null : _processFile,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.lock),
+                      label: const Text('Chiffrer'),
+                      onPressed: _isProcessing ? null : _encryptFile,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isEncryptedFile ? Colors.grey : Colors.green,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.lock_open),
+                      label: const Text('Déchiffrer'),
+                      onPressed: _isProcessing || !_isEncryptedFile ? null : _decryptFile,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isEncryptedFile ? Colors.orange : Colors.grey,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             const SizedBox(height: 12),
-            if (_isProcessing) const LinearProgressIndicator(),
-            if (_processedFilePath != null)
+            if (_isProcessing) 
+              Column(
+                children: [
+                  const LinearProgressIndicator(),
+                  const SizedBox(height: 8),
+                  Text(
+                    _isEncryptedFile ? 'Déchiffrement en cours...' : 'Chiffrement en cours...',
+                    style: const TextStyle(color: Colors.blue),
+                  ),
+                ],
+              ),
+            if (_processedFilePath != null && !kIsWeb)
               Card(
                 color: Colors.green[50],
                 child: ListTile(
                   leading: const Icon(Icons.check_circle, color: Colors.green),
-                  title: const Text('Opération réussie'),
-                  subtitle: Text(_processedFilePath!),
+                  title: const Text('Fichier généré avec succès'),
+                  subtitle: Text(_processedFilePath!.split('/').last),
                   trailing: IconButton(
                     icon: const Icon(Icons.open_in_new),
                     onPressed: () => _openFile(_processedFilePath!),
                   ),
                 ),
               ),
+            
+            // Section d'information
+            const SizedBox(height: 20),
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '💡 Information:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 8),
+                    Text('• Chiffrer: Convertit un fichier normal en fichier sécurisé (.enc)'),
+                    Text('• Déchiffrer: Convertit un fichier .enc en fichier original'),
+                    Text('• Utilisez la même phrase secrète pour les deux opérations'),
+                    Text('• Les fichiers chiffrés ont l\'extension .enc'),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -118,10 +177,11 @@ class _EncryptAndSendPageState extends State<EncryptAndSendPage> {
       _selectedBytes = null;
       _selectedName = null;
       _processedFilePath = null;
+      _isEncryptedFile = false;
     });
   }
 
-  Future<void> _pickFile({required bool toEncrypt}) async {
+  Future<void> _pickFile() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
@@ -134,15 +194,36 @@ class _EncryptAndSendPageState extends State<EncryptAndSendPage> {
           _showError('Impossible de lire le fichier.');
           return;
         }
+        
+        // Vérifier si c'est un fichier chiffré
+        bool isEncrypted = _isEncryptedFileFormat(file.bytes!);
+        
         setState(() {
           _selectedBytes = file.bytes;
           _selectedName = file.name;
           _processedFilePath = null;
+          _isEncryptedFile = isEncrypted;
         });
+        
+        if (isEncrypted) {
+          _showMessage('✅ Fichier chiffré détecté - Prêt pour le déchiffrement');
+        } else {
+          _showMessage('📄 Fichier normal - Prêt pour le chiffrement');
+        }
       }
     } catch (e) {
       _showError('Erreur sélection: $e');
     }
+  }
+
+  bool _isEncryptedFileFormat(Uint8List bytes) {
+    if (bytes.length < 6) return false;
+    
+    // Vérifier le magic number "ULTC" = [85, 76, 84, 67]
+    final magicBytes = bytes.sublist(0, 4);
+    const expectedMagic = [85, 76, 84, 67]; // "ULTC"
+    
+    return const ListEquality().equals(magicBytes, expectedMagic);
   }
 
   Uint8List _deriveKey(String pass) {
@@ -156,73 +237,146 @@ class _EncryptAndSendPageState extends State<EncryptAndSendPage> {
     return IV(Uint8List.fromList(ivBytes));
   }
 
-  Future<void> _processFile() async {
+  Future<void> _encryptFile() async {
     if (_selectedBytes == null || _selectedName == null) return;
     if (_passCtrl.text.isEmpty) {
       _showError('Veuillez entrer une phrase secrète.');
+      return;
+    }
+    
+    if (_isEncryptedFile) {
+      _showError('Ce fichier est déjà chiffré. Sélectionnez un fichier normal.');
       return;
     }
 
     setState(() => _isProcessing = true);
 
     try {
-      if (_selectedName!.endsWith('.enc')) {
-        await _decryptFile();
+      final key = Key(_deriveKey(_passCtrl.text));
+      final iv = _randomIV();
+      final encrypter = Encrypter(
+        AES(key, mode: AESMode.cbc, padding: 'PKCS7'),
+      );
+      final encrypted = encrypter.encryptBytes(_selectedBytes!, iv: iv);
+
+      // Format : magic|version|ivLen|iv|cipher
+      final magic = utf8.encode('ULTC');
+      final version = [1];
+      final ivLen = [iv.bytes.length];
+      final data = <int>[];
+      data.addAll(magic); // 0..3
+      data.addAll(version); // 4
+      data.addAll(ivLen); // 5
+      data.addAll(iv.bytes); // 6..21
+      data.addAll(encrypted.bytes); // 22..
+
+      final outputFileName = '${_selectedName!}.enc';
+
+      if (kIsWeb) {
+        _downloadWeb(data, outputFileName);
+        _showMessage('✅ Fichier chiffré téléchargé: $outputFileName');
       } else {
-        await _encryptFile();
+        final dir = await getApplicationDocumentsDirectory();
+        final outPath = '${dir.path}/$outputFileName';
+        await File(outPath).writeAsBytes(data, flush: true);
+        setState(() => _processedFilePath = outPath);
+        _showMessage('✅ Fichier chiffré créé: ${outPath.split('/').last}');
       }
+
     } catch (e) {
-      _showError('Erreur: $e');
+      _showError('Erreur chiffrement: $e');
     } finally {
       setState(() => _isProcessing = false);
     }
   }
 
-  Future<void> _encryptFile() async {
-    final key = Key(_deriveKey(_passCtrl.text));
-    final iv = _randomIV();
-    final encrypter = Encrypter(AES(key, mode: AESMode.cbc, padding: 'PKCS7'));
-    final encrypted = encrypter.encryptBytes(_selectedBytes!, iv: iv);
+  Future<void> _decryptFile() async {
+    if (_selectedBytes == null || _selectedName == null) return;
+    if (_passCtrl.text.isEmpty) {
+      _showError('Veuillez entrer la phrase secrète utilisée pour le chiffrement.');
+      return;
+    }
+    
+    if (!_isEncryptedFile) {
+      _showError('Ce fichier n\'est pas un fichier chiffré valide.');
+      return;
+    }
 
-    // Préfixe: magic + version + ivLen + iv
-    final magic = utf8.encode('ULTC');
-    final version = [1];
-    final ivLen = [iv.bytes.length];
-    final data = <int>[];
-    data.addAll(magic);
-    data.addAll(version);
-    data.addAll(ivLen);
-    data.addAll(iv.bytes);
-    data.addAll(encrypted.bytes);
+    setState(() => _isProcessing = true);
 
-    final dir = await getApplicationDocumentsDirectory();
-    final outPath = '${dir.path}/${_selectedName!}.enc';
-    await File(outPath).writeAsBytes(data, flush: true);
+    try {
+      final bytes = _selectedBytes!;
+      if (bytes.length < 22) throw Exception('Fichier trop court pour être un fichier chiffré valide.');
 
-    setState(() => _processedFilePath = outPath);
-    _showMessage('Fichier chiffré sauvegardé.');
+      // Lecture en-tête
+      final magicBytes = bytes.sublist(0, 4);
+      const expectedMagic = [85, 76, 84, 67]; // "ULTC"
+
+      if (!const ListEquality().equals(magicBytes, expectedMagic)) {
+        throw Exception(
+          "Format non reconnu. Ce n'est pas un fichier chiffré valide.",
+        );
+      }
+
+      final version = bytes[4];
+      if (version != 1) throw Exception('Version non supportée: $version');
+
+      final ivLen = bytes[5];
+      final ivStart = 6;
+      final ivEnd = ivStart + ivLen;
+
+      if (ivEnd > bytes.length) throw Exception('IV invalide (fichier corrompu)');
+      if (ivLen != 16) throw Exception('Longueur IV invalide: $ivLen (attendu: 16)');
+
+      final ivBytes = bytes.sublist(ivStart, ivEnd);
+      final cipher = bytes.sublist(ivEnd);
+
+      if (cipher.isEmpty) throw Exception('Données chiffrées manquantes.');
+
+      // Déchiffrement
+      final key = Key(_deriveKey(_passCtrl.text));
+      final encrypter = Encrypter(
+        AES(key, mode: AESMode.cbc, padding: 'PKCS7'),
+      );
+      
+      final decrypted = encrypter.decryptBytes(
+        Encrypted(cipher),
+        iv: IV(ivBytes),
+      );
+
+      // Générer le nom de fichier de sortie
+      String outName;
+      if (_selectedName!.toLowerCase().endsWith('.enc')) {
+        outName = _selectedName!.substring(0, _selectedName!.length - 4) + '_decrypted';
+      } else {
+        outName = '${_selectedName!}_decrypted';
+      }
+
+      if (kIsWeb) {
+        _downloadWeb(decrypted, outName);
+        _showMessage('✅ Fichier déchiffré téléchargé: $outName');
+      } else {
+        final dir = await getApplicationDocumentsDirectory();
+        final outPath = '${dir.path}/$outName';
+        await File(outPath).writeAsBytes(decrypted, flush: true);
+        setState(() => _processedFilePath = outPath);
+        _showMessage('✅ Fichier déchiffré créé: ${outPath.split('/').last}');
+      }
+
+    } catch (e) {
+      _showError('Erreur déchiffrement: $e\n\nVérifiez que:\n• Le fichier est bien chiffré\n• La phrase secrète est correcte');
+    } finally {
+      setState(() => _isProcessing = false);
+    }
   }
 
-  Future<void> _decryptFile() async {
-    final bytes = _selectedBytes!;
-    if (bytes.length < 22) throw Exception('Fichier trop court.');
-
-    final magic = utf8.decode(bytes.sublist(0, 4));
-    if (magic != 'ULTC') throw Exception('Format non reconnu.');
-    final ivLen = bytes[5];
-    final ivBytes = bytes.sublist(6, 6 + ivLen);
-    final cipher = bytes.sublist(6 + ivLen);
-
-    final key = Key(_deriveKey(_passCtrl.text));
-    final encrypter = Encrypter(AES(key, mode: AESMode.cbc, padding: 'PKCS7'));
-    final decrypted = encrypter.decryptBytes(Encrypted(cipher), iv: IV(ivBytes));
-
-    final dir = await getApplicationDocumentsDirectory();
-    final outPath = '${dir.path}/${_selectedName!.replaceAll(".enc", ".dec")}';
-    await File(outPath).writeAsBytes(decrypted, flush: true);
-
-    setState(() => _processedFilePath = outPath);
-    _showMessage('Fichier déchiffré sauvegardé.');
+  void _downloadWeb(List<int> bytes, String fileName) {
+    final blob = html.Blob([bytes]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    final anchor = html.AnchorElement(href: url)
+      ..setAttribute("download", fileName)
+      ..click();
+    html.Url.revokeObjectUrl(url);
   }
 
   Future<void> _openFile(String path) async {
@@ -235,13 +389,21 @@ class _EncryptAndSendPageState extends State<EncryptAndSendPage> {
 
   void _showMessage(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.blue),
+      SnackBar(
+        content: Text(msg), 
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 3),
+      )
     );
   }
 
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.red),
+      SnackBar(
+        content: Text(msg), 
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 4),
+      )
     );
   }
 }
