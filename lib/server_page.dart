@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 class ServerPage extends StatefulWidget {
   const ServerPage({super.key});
@@ -21,6 +22,7 @@ class _ServerPageState extends State<ServerPage> {
     super.initState();
     final dir = Directory(storageDir);
     if (!dir.existsSync()) dir.createSync(recursive: true);
+    _updateFilesList();
   }
 
   void _addLog(String msg) {
@@ -69,6 +71,19 @@ class _ServerPageState extends State<ServerPage> {
             ..headers.contentType = ContentType.json
             ..write(jsonEncode(_files));
           await request.response.close();
+        } else if (request.method == 'GET' &&
+            request.uri.path.startsWith('/files/')) {
+          // téléchargement depuis client
+          final fileName = request.uri.pathSegments.last;
+          final file = File(path.join(storageDir, fileName));
+          if (await file.exists()) {
+            request.response.headers.contentType = ContentType.binary;
+            await request.response.addStream(file.openRead());
+          } else {
+            request.response.statusCode = HttpStatus.notFound;
+            request.response.write("❌ Fichier non trouvé");
+          }
+          await request.response.close();
         } else {
           request.response.write("Serveur actif");
           await request.response.close();
@@ -116,6 +131,62 @@ class _ServerPageState extends State<ServerPage> {
     return 'localhost';
   }
 
+  Future<void> _deleteFile(String fileName) async {
+    final file = File(path.join(storageDir, fileName));
+    if (await file.exists()) {
+      await file.delete();
+      _addLog("🗑 Fichier supprimé: $fileName");
+      _updateFilesList();
+    }
+  }
+
+  Future<void> _renameFile(String oldName, String newName) async {
+    final file = File(path.join(storageDir, oldName));
+    final newFile = File(path.join(storageDir, newName));
+    if (await file.exists()) {
+      await file.rename(newFile.path);
+      _addLog("✏️ Fichier renommé: $oldName → $newName");
+      _updateFilesList();
+    }
+  }
+
+  Future<void> _downloadFileLocally(String fileName) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final target = File(path.join(dir.path, fileName));
+    final source = File(path.join(storageDir, fileName));
+    if (await source.exists()) {
+      await target.writeAsBytes(await source.readAsBytes());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("📥 Sauvegardé dans Documents : ${target.path}"),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<String?> _askNewName(BuildContext context, String oldName) async {
+    final controller = TextEditingController(text: oldName);
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Renommer le fichier'),
+        content: TextField(controller: controller),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isRunning = _server != null;
@@ -129,89 +200,11 @@ class _ServerPageState extends State<ServerPage> {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            // --- État du serveur ---
-            Card(
-              color: isRunning ? Colors.green.shade100 : Colors.red.shade100,
-              child: ListTile(
-                leading: Icon(
-                  isRunning ? Icons.check_circle : Icons.cancel,
-                  color: isRunning ? Colors.green : Colors.red,
-                ),
-                title: Text(
-                  isRunning ? "Serveur en ligne" : "Serveur arrêté",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isRunning ? Colors.green[900] : Colors.red[900],
-                  ),
-                ),
-                subtitle: isRunning
-                    ? FutureBuilder<String>(
-                        future: _getLocalIp(),
-                        builder: (context, snapshot) {
-                          return Text(
-                            snapshot.hasData
-                                ? "Adresse: http://${snapshot.data}:8080"
-                                : "Chargement...",
-                          );
-                        },
-                      )
-                    : const Text("Appuyez sur Démarrer pour lancer le serveur"),
-                trailing: ElevatedButton.icon(
-                  onPressed: isRunning ? _stopServer : _startServer,
-                  icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
-                  label: Text(isRunning ? "Arrêter" : "Démarrer"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isRunning ? Colors.red : Colors.green,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // --- Logs ---
-            Expanded(
-              flex: 2,
-              child: Card(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const ListTile(
-                      leading: Icon(Icons.list_alt),
-                      title: Text(
-                        "Logs",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: _logs.isEmpty
-                          ? const Center(
-                              child: Text("Aucun log pour le moment"),
-                            )
-                          : ListView.builder(
-                              itemCount: _logs.length,
-                              itemBuilder: (context, index) => ListTile(
-                                dense: true,
-                                title: Text(
-                                  _logs[index],
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
             // --- Fichiers reçus ---
             Expanded(
               flex: 2,
               child: Card(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const ListTile(
                       leading: Icon(Icons.folder),
@@ -223,16 +216,77 @@ class _ServerPageState extends State<ServerPage> {
                     const Divider(height: 1),
                     Expanded(
                       child: _files.isEmpty
-                          ? const Center(
-                              child: Text("Aucun fichier reçu pour le moment"),
-                            )
+                          ? const Center(child: Text("Aucun fichier"))
                           : ListView.builder(
                               itemCount: _files.length,
-                              itemBuilder: (context, index) => ListTile(
-                                leading: const Icon(Icons.insert_drive_file),
-                                title: Text(_files[index]),
-                              ),
+                              itemBuilder: (context, index) {
+                                final fileName = _files[index];
+                                return ListTile(
+                                  leading: const Icon(Icons.insert_drive_file),
+                                  title: Text(fileName),
+                                  trailing: PopupMenuButton<String>(
+                                    onSelected: (value) async {
+                                      if (value == 'delete') {
+                                        await _deleteFile(fileName);
+                                      } else if (value == 'rename') {
+                                        final newName = await _askNewName(
+                                          context,
+                                          fileName,
+                                        );
+                                        if (newName != null &&
+                                            newName.isNotEmpty) {
+                                          await _renameFile(fileName, newName);
+                                        }
+                                      } else if (value == 'download') {
+                                        await _downloadFileLocally(fileName);
+                                      }
+                                    },
+                                    itemBuilder: (context) => [
+                                      const PopupMenuItem(
+                                        value: 'delete',
+                                        child: Text("🗑 Supprimer"),
+                                      ),
+                                      const PopupMenuItem(
+                                        value: 'rename',
+                                        child: Text("✏️ Renommer"),
+                                      ),
+                                      const PopupMenuItem(
+                                        value: 'download',
+                                        child: Text("⬇️ Télécharger"),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // --- Logs ---
+            Expanded(
+              flex: 1,
+              child: Card(
+                child: Column(
+                  children: [
+                    const ListTile(
+                      leading: Icon(Icons.list_alt),
+                      title: Text("Logs"),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: _logs.length,
+                        itemBuilder: (context, index) => ListTile(
+                          title: Text(
+                            _logs[index],
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -240,6 +294,12 @@ class _ServerPageState extends State<ServerPage> {
             ),
           ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: isRunning ? _stopServer : _startServer,
+        backgroundColor: isRunning ? Colors.red : Colors.green,
+        icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
+        label: Text(isRunning ? "Arrêter" : "Démarrer"),
       ),
     );
   }

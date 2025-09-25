@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 
 class ClientPage extends StatefulWidget {
   const ClientPage({super.key});
@@ -16,12 +18,45 @@ class _ClientPageState extends State<ClientPage> {
   final TextEditingController _portController = TextEditingController(
     text: "8080",
   );
-  final List<String> _logs = [];
+
   List<String> _serverFiles = [];
+  final List<String> _logs = [];
 
-  void _addLog(String msg) =>
-      setState(() => _logs.add("[${DateTime.now().toIso8601String()}] $msg"));
+  void _addLog(String msg) {
+    setState(() => _logs.add("[${DateTime.now().toIso8601String()}] $msg"));
+  }
 
+  String get _serverAddress =>
+      "${_ipController.text.trim()}:${_portController.text.trim()}";
+
+  // --- Se connecter / récupérer fichiers ---
+  Future<void> _fetchServerFiles() async {
+    final ip = _ipController.text.trim();
+    final port = int.tryParse(_portController.text.trim()) ?? 8080;
+
+    if (ip.isEmpty) {
+      _addLog("❌ IP serveur non renseignée");
+      return;
+    }
+
+    try {
+      final uri = Uri.parse("http://$ip:$port/files");
+      final response = await http.get(uri);
+
+      if (response.statusCode == 200) {
+        setState(
+          () => _serverFiles = List<String>.from(jsonDecode(response.body)),
+        );
+        _addLog("✅ Liste des fichiers récupérée depuis $ip:$port");
+      } else {
+        _addLog("❌ Erreur récupération fichiers : ${response.statusCode}");
+      }
+    } catch (e) {
+      _addLog("❌ Erreur récupération fichiers : $e");
+    }
+  }
+
+  // --- Envoyer un fichier ---
   Future<void> _pickAndSendFile() async {
     final result = await FilePicker.platform.pickFiles();
     if (result == null) return;
@@ -29,6 +64,11 @@ class _ClientPageState extends State<ClientPage> {
     final file = File(result.files.single.path!);
     final ip = _ipController.text.trim();
     final port = int.tryParse(_portController.text.trim()) ?? 8080;
+
+    if (ip.isEmpty) {
+      _addLog("❌ IP serveur non renseignée");
+      return;
+    }
 
     try {
       final uri = Uri.parse("http://$ip:$port/upload");
@@ -44,94 +84,84 @@ class _ClientPageState extends State<ClientPage> {
 
       final response = await request.send();
       final respBody = await response.stream.bytesToString();
-      _addLog("✅ $respBody");
+      _addLog(respBody);
 
-      _listServerFiles();
+      // Rafraîchir la liste après envoi
+      await _fetchServerFiles();
     } catch (e) {
       _addLog("❌ Erreur envoi fichier : $e");
     }
   }
 
-  Future<void> _listServerFiles() async {
-    final ip = _ipController.text.trim();
-    final port = int.tryParse(_portController.text.trim()) ?? 8080;
-
+  // --- Télécharger un fichier ---
+  Future<void> _downloadFile(String fileName) async {
     try {
-      final uri = Uri.parse("http://$ip:$port/files");
-      final response = await http.get(uri);
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$fileName');
 
-      if (response.statusCode == 200) {
-        setState(
-          () => _serverFiles = List<String>.from(jsonDecode(response.body)),
+      final url =
+          "http://${_ipController.text.trim()}:${_portController.text.trim()}/files/$fileName";
+      final request = await HttpClient().getUrl(Uri.parse(url));
+      final response = await request.close();
+      final bytes = await consolidateHttpClientResponseBytes(response);
+      await file.writeAsBytes(bytes);
+
+      _addLog("📥 Fichier téléchargé : $fileName");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("📥 Fichier téléchargé : ${file.path}")),
         );
-      } else {
-        _addLog("❌ Impossible de lister les fichiers : ${response.statusCode}");
       }
     } catch (e) {
-      _addLog("❌ Erreur récupération fichiers : $e");
+      _addLog("❌ Erreur téléchargement : $e");
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Client")),
+      appBar: AppBar(title: const Text("Client - Fichiers Serveur")),
       body: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            // --- Connexion au serveur ---
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  children: [
-                    const ListTile(
-                      leading: Icon(Icons.cloud),
-                      title: Text(
-                        "Connexion au serveur",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
+            // --- IP / Port / Connecter / Envoyer ---
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ipController,
+                    decoration: const InputDecoration(
+                      labelText: "IP du serveur",
                     ),
-                    TextField(
-                      controller: _ipController,
-                      decoration: const InputDecoration(
-                        labelText: "IP du serveur",
-                        prefixIcon: Icon(Icons.lan),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _portController,
-                      decoration: const InputDecoration(
-                        labelText: "Port",
-                        prefixIcon: Icon(Icons.numbers),
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: _pickAndSendFile,
-                          icon: const Icon(Icons.upload_file),
-                          label: const Text("Envoyer un fichier"),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: _listServerFiles,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text("Lister fichiers"),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 80,
+                  child: TextField(
+                    controller: _portController,
+                    decoration: const InputDecoration(labelText: "Port"),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _fetchServerFiles,
+                  child: const Text("Connecter"),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _pickAndSendFile,
+                  child: const Text("Envoyer"),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _fetchServerFiles,
+                  child: const Text("Actualiser"),
+                ),
+              ],
             ),
-
             const SizedBox(height: 12),
 
             // --- Fichiers serveur ---
@@ -139,12 +169,11 @@ class _ClientPageState extends State<ClientPage> {
               flex: 2,
               child: Card(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const ListTile(
                       leading: Icon(Icons.folder),
                       title: Text(
-                        "Fichiers sur le serveur",
+                        "Fichiers disponibles sur le serveur",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -156,10 +185,26 @@ class _ClientPageState extends State<ClientPage> {
                             )
                           : ListView.builder(
                               itemCount: _serverFiles.length,
-                              itemBuilder: (context, index) => ListTile(
-                                leading: const Icon(Icons.insert_drive_file),
-                                title: Text(_serverFiles[index]),
-                              ),
+                              itemBuilder: (context, index) {
+                                final fileName = _serverFiles[index];
+                                return ListTile(
+                                  leading: const Icon(Icons.insert_drive_file),
+                                  title: Text(fileName),
+                                  trailing: PopupMenuButton<String>(
+                                    onSelected: (value) async {
+                                      if (value == 'download') {
+                                        await _downloadFile(fileName);
+                                      }
+                                    },
+                                    itemBuilder: (context) => const [
+                                      PopupMenuItem(
+                                        value: 'download',
+                                        child: Text("⬇️ Télécharger"),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
                     ),
                   ],
@@ -171,17 +216,13 @@ class _ClientPageState extends State<ClientPage> {
 
             // --- Logs ---
             Expanded(
-              flex: 2,
+              flex: 1,
               child: Card(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const ListTile(
                       leading: Icon(Icons.list_alt),
-                      title: Text(
-                        "Logs",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                      title: Text("Logs"),
                     ),
                     const Divider(height: 1),
                     Expanded(
