@@ -31,6 +31,15 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Pour sélectionner des fichiers sur le client
+  file_picker: ^6.1.0
+
+  # Pour envoyer des fichiers HTTP côté client
+  http: ^1.1.0
+
+  # Pour manipuler les chemins de fichiers
+  path: ^1.9.0
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8

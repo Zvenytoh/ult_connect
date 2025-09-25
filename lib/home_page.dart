@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ult_connect/digital_identity_page.dart';
-import 'package:ult_connect/find_host_page.dart';
-import 'package:ult_connect/server_monitoring_page.dart';
-import 'package:ult_connect/simple_local_server.dart';
+import 'package:ult_connect/client_page.dart';
+import 'package:ult_connect/server_page.dart'; // <-- Page pour gérer le serveur
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -48,17 +47,22 @@ class HomePage extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // Être le Host (Serveur Local)
+              // Démarrer Serveur
               _buildMenuCard(
                 context,
                 icon: Icons.computer,
-                label: "Démarrer Serveur Local",
+                label: "Démarrer Serveur",
                 color: Colors.green.shade600,
-                onTap: () => _startServer(context),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => ServerPage()),
+                  );
+                },
               ),
               const SizedBox(height: 20),
 
-              // Trouver un Host
+              // Trouver un Host (Client)
               _buildMenuCard(
                 context,
                 icon: Icons.search,
@@ -67,24 +71,7 @@ class HomePage extends StatelessWidget {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => FindHostPage()),
-                  );
-                },
-              ),
-              
-              const SizedBox(height: 20),
-              
-              // Monitoring Serveur
-              _buildSecondaryButton(
-                context,
-                icon: Icons.monitor,
-                label: "Monitor Serveur",
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ServerMonitorPage(),
-                    ),
+                    MaterialPageRoute(builder: (context) => ClientPage()),
                   );
                 },
               ),
@@ -93,27 +80,6 @@ class HomePage extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  void _startServer(BuildContext context) async {
-    final server = SimpleLocalServer();
-    bool success = await server.startServer(8080, bindTo: '0.0.0.0');
-    
-    if (success) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ServerMonitorPage(server: server),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur: Port 8080 peut-être déjà utilisé'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
   }
 
   Widget _buildMenuCard(
@@ -152,48 +118,6 @@ class HomePage extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSecondaryButton(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return SizedBox(
-      width: 280,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.blue[800],
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: Colors.blue.shade300 ?? Colors.blue,
-              width: 1,
-            ),
-          ),
-          padding: const EdgeInsets.all(16),
-          elevation: 2,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 24),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.blue[800],
-              ),
-            ),
-          ],
         ),
       ),
     );
