@@ -1,11 +1,11 @@
 import 'dart:io';
-import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter/foundation.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
+import 'package:flutter/foundation.dart';
 
 class ServerPage extends StatefulWidget {
   const ServerPage({super.key});
@@ -25,6 +25,7 @@ class _ServerPageState extends State<ServerPage> {
     super.initState();
     final dir = Directory(storageDir);
     if (!dir.existsSync()) dir.createSync(recursive: true);
+    _updateFilesList();
   }
 
   void _addLog(String msg) {
@@ -46,42 +47,53 @@ class _ServerPageState extends State<ServerPage> {
           try {
             final bytes = await request.fold<List<int>>(
               [],
-              (prev, e) => prev..addAll(e),
+              (prev, element) => prev..addAll(element),
             );
+
             final filename =
                 request.headers.value('x-filename') ??
                 'file_${DateTime.now().millisecondsSinceEpoch}';
-            final encrypted = request.headers.value('x-encrypted') == '1';
+            final encryptedFlag = request.headers.value('x-encrypted') == '1';
             final owner = clientIp;
-
             final file = File(path.join(storageDir, filename));
             await file.writeAsBytes(bytes);
 
-            _files.add({
-              'name': filename,
-              'encrypted': encrypted,
-              'owner': owner,
-            });
-
             _addLog(
-              "💾 Fichier reçu de $owner : $filename (encrypted: $encrypted)",
+              "💾 Fichier reçu de $clientIp : $filename (encrypted: $encryptedFlag)",
             );
+
+            // Mettre à jour la liste
+            await _updateFilesList();
+
+            // stocke info fichier côté serveur
+            final fileIndex = _files.indexWhere((f) => f['name'] == filename);
+            if (fileIndex >= 0) {
+              _files[fileIndex]['encrypted'] = encryptedFlag;
+              _files[fileIndex]['owner'] = owner;
+            } else {
+              _files.add({
+                'name': filename,
+                'encrypted': encryptedFlag,
+                'owner': owner,
+              });
+            }
+
             request.response.write("✅ Fichier reçu !");
             await request.response.close();
-
-            _updateFilesList();
           } catch (e) {
             _addLog("❌ Erreur réception fichier: $e");
             request.response.statusCode = HttpStatus.internalServerError;
             await request.response.close();
           }
         } else if (request.method == 'GET' && request.uri.path == '/files') {
+          // Retourne la liste des fichiers (JSON)
           request.response
             ..headers.contentType = ContentType.json
             ..write(jsonEncode(_files));
           await request.response.close();
         } else if (request.method == 'GET' &&
             request.uri.path.startsWith('/files/')) {
+          // Téléchargement fichier
           final fileName = request.uri.pathSegments.last;
           final file = File(path.join(storageDir, fileName));
           if (file.existsSync()) {
@@ -111,15 +123,28 @@ class _ServerPageState extends State<ServerPage> {
 
   Future<void> _updateFilesList() async {
     final dir = Directory(storageDir);
-    final existingFiles = dir.existsSync()
-        ? dir
-              .listSync()
-              .whereType<File>()
-              .map((f) => path.basename(f.path))
-              .toList()
+    final list = dir.existsSync()
+        ? dir.listSync().whereType<File>().map((f) {
+            final name = path.basename(f.path);
+            final existing = _files.firstWhere(
+              (e) => e['name'] == name,
+              orElse: () => {
+                'name': name,
+                'encrypted': false,
+                'owner': 'unknown',
+              },
+            );
+            return {
+              'name': name,
+              'encrypted': existing['encrypted'] ?? false,
+              'owner': existing['owner'] ?? 'unknown',
+            };
+          }).toList()
         : [];
     setState(() {
-      _files.removeWhere((f) => !existingFiles.contains(f['name']));
+      _files
+        ..clear()
+        ..addAll(list as Iterable<Map<String, dynamic>>);
     });
   }
 
@@ -136,17 +161,48 @@ class _ServerPageState extends State<ServerPage> {
     return 'localhost';
   }
 
+  Future<void> _deleteFile(String fileName) async {
+    try {
+      final file = File(path.join(storageDir, fileName));
+      if (file.existsSync()) {
+        await file.delete();
+        _addLog("🗑️ Fichier supprimé : $fileName");
+        await _updateFilesList();
+      }
+    } catch (e) {
+      _addLog("❌ Erreur suppression : $e");
+    }
+  }
+
+  Future<void> _renameFile(String oldName, String newName) async {
+    try {
+      final oldFile = File(path.join(storageDir, oldName));
+      if (oldFile.existsSync()) {
+        final newFile = File(path.join(storageDir, newName));
+        await oldFile.rename(newFile.path);
+        _addLog("✏️ Fichier renommé : $oldName -> $newName");
+        await _updateFilesList();
+      }
+    } catch (e) {
+      _addLog("❌ Erreur renommage : $e");
+    }
+  }
+
   Future<void> _downloadFile(Map<String, dynamic> fileObj) async {
-    final fileName = fileObj['name'] as String;
+    final name = fileObj['name'] as String;
     final encrypted = fileObj['encrypted'] == true;
 
     try {
-      final file = File(path.join(storageDir, fileName));
-      if (!file.existsSync()) return;
+      final file = File(path.join(storageDir, name));
+      if (!file.existsSync()) {
+        _addLog("❌ Fichier introuvable : $name");
+        return;
+      }
 
-      Uint8List dataToSave = await file.readAsBytes();
+      Uint8List bytes = await file.readAsBytes();
 
       if (encrypted) {
+        // demander mot de passe pour déchiffrement
         final password = await showDialog<String>(
           context: context,
           builder: (ctx) {
@@ -156,9 +212,7 @@ class _ServerPageState extends State<ServerPage> {
               content: TextField(
                 controller: ctrl,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: "Mot de passe du propriétaire",
-                ),
+                decoration: const InputDecoration(labelText: "Mot de passe"),
               ),
               actions: [
                 TextButton(
@@ -175,49 +229,30 @@ class _ServerPageState extends State<ServerPage> {
         );
 
         if (password == null || password.isEmpty) {
-          _addLog("❌ Téléchargement annulé (mot de passe non fourni)");
+          _addLog("❌ Déchiffrement annulé (mot de passe non fourni)");
           return;
         }
-
-        // déchiffrement iv + ciphertext
-        if (dataToSave.length < 16) {
-          _addLog("❌ Contenu invalide (trop court)");
-          return;
-        }
-        final ivBytes = dataToSave.sublist(0, 16);
-        final cipher = dataToSave.sublist(16);
 
         try {
           final key = encrypt.Key.fromUtf8(
             password.padRight(32).substring(0, 32),
           );
-          final iv = encrypt.IV(ivBytes);
+          final iv = encrypt.IV(bytes.sublist(0, 16));
+          final cipher = bytes.sublist(16);
           final encrypter = encrypt.Encrypter(encrypt.AES(key));
-          final decrypted = encrypter.decryptBytes(
-            encrypt.Encrypted(cipher),
-            iv: iv,
+          bytes = Uint8List.fromList(
+            encrypter.decryptBytes(encrypt.Encrypted(cipher), iv: iv),
           );
-          dataToSave = Uint8List.fromList(decrypted);
         } catch (e) {
           _addLog("❌ Déchiffrement échoué : $e");
-          if (mounted)
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("Mot de passe incorrect ou fichier corrompu"),
-              ),
-            );
           return;
         }
       }
 
-      final dir = await getApplicationDocumentsDirectory();
-      final outFile = File(path.join(dir.path, fileName));
-      await outFile.writeAsBytes(dataToSave, flush: true);
-      _addLog("📥 Fichier téléchargé & enregistré : ${outFile.path}");
-      if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Téléchargé : ${outFile.path}")));
+      final docs = await getApplicationDocumentsDirectory();
+      final out = File(path.join(docs.path, name));
+      await out.writeAsBytes(bytes, flush: true);
+      _addLog("📥 Fichier téléchargé : ${out.path}");
     } catch (e) {
       _addLog("❌ Erreur téléchargement : $e");
     }
@@ -236,7 +271,7 @@ class _ServerPageState extends State<ServerPage> {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            // --- État du serveur ---
+            // Serveur
             Card(
               color: isRunning ? Colors.green.shade100 : Colors.red.shade100,
               child: ListTile(
@@ -254,13 +289,11 @@ class _ServerPageState extends State<ServerPage> {
                 subtitle: isRunning
                     ? FutureBuilder<String>(
                         future: _getLocalIp(),
-                        builder: (context, snapshot) {
-                          return Text(
-                            snapshot.hasData
-                                ? "Adresse: http://${snapshot.data}:8080"
-                                : "Chargement...",
-                          );
-                        },
+                        builder: (ctx, snap) => Text(
+                          snap.hasData
+                              ? "Adresse: http://${snap.data}:8080"
+                              : "Chargement...",
+                        ),
                       )
                     : const Text("Appuyez sur Démarrer pour lancer le serveur"),
                 trailing: ElevatedButton.icon(
@@ -273,9 +306,10 @@ class _ServerPageState extends State<ServerPage> {
                 ),
               ),
             ),
+
             const SizedBox(height: 12),
 
-            // --- Logs ---
+            // Logs
             Expanded(
               flex: 2,
               child: Card(
@@ -292,17 +326,12 @@ class _ServerPageState extends State<ServerPage> {
                     const Divider(height: 1),
                     Expanded(
                       child: _logs.isEmpty
-                          ? const Center(
-                              child: Text("Aucun log pour le moment"),
-                            )
+                          ? const Center(child: Text("Aucun log"))
                           : ListView.builder(
                               itemCount: _logs.length,
-                              itemBuilder: (context, index) => ListTile(
-                                dense: true,
-                                title: Text(
-                                  _logs[index],
-                                  style: const TextStyle(fontSize: 12),
-                                ),
+                              itemBuilder: (_, i) => Text(
+                                _logs[i],
+                                style: const TextStyle(fontSize: 12),
                               ),
                             ),
                     ),
@@ -313,7 +342,7 @@ class _ServerPageState extends State<ServerPage> {
 
             const SizedBox(height: 12),
 
-            // --- Fichiers reçus ---
+            // Fichiers
             Expanded(
               flex: 3,
               child: Card(
@@ -330,36 +359,76 @@ class _ServerPageState extends State<ServerPage> {
                     const Divider(height: 1),
                     Expanded(
                       child: _files.isEmpty
-                          ? const Center(
-                              child: Text("Aucun fichier reçu pour le moment"),
-                            )
+                          ? const Center(child: Text("Aucun fichier"))
                           : ListView.builder(
                               itemCount: _files.length,
-                              itemBuilder: (context, index) {
-                                final fileObj = _files[index];
-                                final encrypted = fileObj['encrypted'] == true;
-                                final owner = fileObj['owner'] ?? 'unknown';
+                              itemBuilder: (_, i) {
+                                final f = _files[i];
                                 return ListTile(
                                   leading: Icon(
-                                    encrypted
+                                    f['encrypted']
                                         ? Icons.lock
                                         : Icons.insert_drive_file,
                                   ),
-                                  title: Text(fileObj['name']),
+                                  title: Text(f['name']),
                                   subtitle: Text(
-                                    encrypted
-                                        ? "🔒 chiffré • owner: $owner"
-                                        : "non chiffré • owner: $owner",
+                                    f['encrypted']
+                                        ? "🔒 chiffré • owner: ${f['owner']}"
+                                        : "non chiffré • owner: ${f['owner']}",
                                   ),
                                   trailing: PopupMenuButton<String>(
-                                    onSelected: (value) {
-                                      if (value == 'download')
-                                        _downloadFile(fileObj);
+                                    onSelected: (v) async {
+                                      if (v == 'download')
+                                        await _downloadFile(f);
+                                      if (v == 'delete')
+                                        await _deleteFile(f['name']);
+                                      if (v == 'rename') {
+                                        final ctrl = TextEditingController();
+                                        await showDialog(
+                                          context: context,
+                                          builder: (_) => AlertDialog(
+                                            title: const Text(
+                                              "Renommer fichier",
+                                            ),
+                                            content: TextField(
+                                              controller: ctrl,
+                                              decoration: const InputDecoration(
+                                                labelText: "Nouveau nom",
+                                              ),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(context),
+                                                child: const Text("Annuler"),
+                                              ),
+                                              TextButton(
+                                                onPressed: () {
+                                                  _renameFile(
+                                                    f['name'],
+                                                    ctrl.text,
+                                                  );
+                                                  Navigator.pop(context);
+                                                },
+                                                child: const Text("Valider"),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }
                                     },
                                     itemBuilder: (_) => const [
                                       PopupMenuItem(
                                         value: 'download',
                                         child: Text("⬇️ Télécharger"),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'rename',
+                                        child: Text("✏️ Renommer"),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'delete',
+                                        child: Text("🗑️ Supprimer"),
                                       ),
                                     ],
                                   ),
