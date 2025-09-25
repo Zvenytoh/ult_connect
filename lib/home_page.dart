@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'digital_identity_page.dart';
 import 'host_page.dart';
 import 'find_host_page.dart';
+import 'service/bluetooth_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -34,6 +35,34 @@ class HomePage extends StatelessWidget {
                       Icon(Icons.badge, size: 40),
                       SizedBox(height: 10),
                       Text('Identité Numérique', style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            
+            const SizedBox(height: 30),
+            
+            // Bouton Échange Bluetooth (NOUVEAU)
+            SizedBox(
+              width: 250,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => BluetoothPage()),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Icon(Icons.bluetooth, size: 40),
+                      SizedBox(height: 10),
+                      Text('Échange Bluetooth', style: TextStyle(fontSize: 16)),
                     ],
                   ),
                 ),
