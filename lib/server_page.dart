@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
+import 'package:encrypt/encrypt.dart' as encrypt;
 
 class ServerPage extends StatefulWidget {
   const ServerPage({super.key});
@@ -14,7 +17,7 @@ class ServerPage extends StatefulWidget {
 class _ServerPageState extends State<ServerPage> {
   HttpServer? _server;
   final List<String> _logs = [];
-  final List<String> _files = [];
+  final List<Map<String, dynamic>> _files = []; // {name, encrypted, owner}
   final String storageDir = "server_files";
 
   @override
@@ -22,7 +25,6 @@ class _ServerPageState extends State<ServerPage> {
     super.initState();
     final dir = Directory(storageDir);
     if (!dir.existsSync()) dir.createSync(recursive: true);
-    _updateFilesList();
   }
 
   void _addLog(String msg) {
@@ -44,19 +46,26 @@ class _ServerPageState extends State<ServerPage> {
           try {
             final bytes = await request.fold<List<int>>(
               [],
-              (prev, element) => prev..addAll(element),
+              (prev, e) => prev..addAll(e),
             );
-
-            final contentDisp = request.headers.value('content-disposition');
-            String filename = 'file_${DateTime.now().millisecondsSinceEpoch}';
-            if (contentDisp != null && contentDisp.contains('filename=')) {
-              filename = contentDisp.split('filename=')[1].replaceAll('"', '');
-            }
+            final filename =
+                request.headers.value('x-filename') ??
+                'file_${DateTime.now().millisecondsSinceEpoch}';
+            final encrypted = request.headers.value('x-encrypted') == '1';
+            final owner = clientIp;
 
             final file = File(path.join(storageDir, filename));
             await file.writeAsBytes(bytes);
 
-            _addLog("💾 Fichier reçu de $clientIp: $filename");
+            _files.add({
+              'name': filename,
+              'encrypted': encrypted,
+              'owner': owner,
+            });
+
+            _addLog(
+              "💾 Fichier reçu de $owner : $filename (encrypted: $encrypted)",
+            );
             request.response.write("✅ Fichier reçu !");
             await request.response.close();
 
@@ -73,15 +82,13 @@ class _ServerPageState extends State<ServerPage> {
           await request.response.close();
         } else if (request.method == 'GET' &&
             request.uri.path.startsWith('/files/')) {
-          // téléchargement depuis client
           final fileName = request.uri.pathSegments.last;
           final file = File(path.join(storageDir, fileName));
-          if (await file.exists()) {
+          if (file.existsSync()) {
             request.response.headers.contentType = ContentType.binary;
             await request.response.addStream(file.openRead());
           } else {
             request.response.statusCode = HttpStatus.notFound;
-            request.response.write("❌ Fichier non trouvé");
           }
           await request.response.close();
         } else {
@@ -104,7 +111,7 @@ class _ServerPageState extends State<ServerPage> {
 
   Future<void> _updateFilesList() async {
     final dir = Directory(storageDir);
-    final list = dir.existsSync()
+    final existingFiles = dir.existsSync()
         ? dir
               .listSync()
               .whereType<File>()
@@ -112,9 +119,7 @@ class _ServerPageState extends State<ServerPage> {
               .toList()
         : [];
     setState(() {
-      _files
-        ..clear()
-        ..addAll(list as Iterable<String>);
+      _files.removeWhere((f) => !existingFiles.contains(f['name']));
     });
   }
 
@@ -131,60 +136,91 @@ class _ServerPageState extends State<ServerPage> {
     return 'localhost';
   }
 
-  Future<void> _deleteFile(String fileName) async {
-    final file = File(path.join(storageDir, fileName));
-    if (await file.exists()) {
-      await file.delete();
-      _addLog("🗑 Fichier supprimé: $fileName");
-      _updateFilesList();
-    }
-  }
+  Future<void> _downloadFile(Map<String, dynamic> fileObj) async {
+    final fileName = fileObj['name'] as String;
+    final encrypted = fileObj['encrypted'] == true;
 
-  Future<void> _renameFile(String oldName, String newName) async {
-    final file = File(path.join(storageDir, oldName));
-    final newFile = File(path.join(storageDir, newName));
-    if (await file.exists()) {
-      await file.rename(newFile.path);
-      _addLog("✏️ Fichier renommé: $oldName → $newName");
-      _updateFilesList();
-    }
-  }
+    try {
+      final file = File(path.join(storageDir, fileName));
+      if (!file.existsSync()) return;
 
-  Future<void> _downloadFileLocally(String fileName) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final target = File(path.join(dir.path, fileName));
-    final source = File(path.join(storageDir, fileName));
-    if (await source.exists()) {
-      await target.writeAsBytes(await source.readAsBytes());
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("📥 Sauvegardé dans Documents : ${target.path}"),
-          ),
+      Uint8List dataToSave = await file.readAsBytes();
+
+      if (encrypted) {
+        final password = await showDialog<String>(
+          context: context,
+          builder: (ctx) {
+            final ctrl = TextEditingController();
+            return AlertDialog(
+              title: const Text("Mot de passe requis"),
+              content: TextField(
+                controller: ctrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: "Mot de passe du propriétaire",
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text("Annuler"),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, ctrl.text),
+                  child: const Text("Valider"),
+                ),
+              ],
+            );
+          },
         );
-      }
-    }
-  }
 
-  Future<String?> _askNewName(BuildContext context, String oldName) async {
-    final controller = TextEditingController(text: oldName);
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Renommer le fichier'),
-        content: TextField(controller: controller),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+        if (password == null || password.isEmpty) {
+          _addLog("❌ Téléchargement annulé (mot de passe non fourni)");
+          return;
+        }
+
+        // déchiffrement iv + ciphertext
+        if (dataToSave.length < 16) {
+          _addLog("❌ Contenu invalide (trop court)");
+          return;
+        }
+        final ivBytes = dataToSave.sublist(0, 16);
+        final cipher = dataToSave.sublist(16);
+
+        try {
+          final key = encrypt.Key.fromUtf8(
+            password.padRight(32).substring(0, 32),
+          );
+          final iv = encrypt.IV(ivBytes);
+          final encrypter = encrypt.Encrypter(encrypt.AES(key));
+          final decrypted = encrypter.decryptBytes(
+            encrypt.Encrypted(cipher),
+            iv: iv,
+          );
+          dataToSave = Uint8List.fromList(decrypted);
+        } catch (e) {
+          _addLog("❌ Déchiffrement échoué : $e");
+          if (mounted)
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Mot de passe incorrect ou fichier corrompu"),
+              ),
+            );
+          return;
+        }
+      }
+
+      final dir = await getApplicationDocumentsDirectory();
+      final outFile = File(path.join(dir.path, fileName));
+      await outFile.writeAsBytes(dataToSave, flush: true);
+      _addLog("📥 Fichier téléchargé & enregistré : ${outFile.path}");
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Téléchargé : ${outFile.path}")));
+    } catch (e) {
+      _addLog("❌ Erreur téléchargement : $e");
+    }
   }
 
   @override
@@ -200,11 +236,89 @@ class _ServerPageState extends State<ServerPage> {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            // --- Fichiers reçus ---
+            // --- État du serveur ---
+            Card(
+              color: isRunning ? Colors.green.shade100 : Colors.red.shade100,
+              child: ListTile(
+                leading: Icon(
+                  isRunning ? Icons.check_circle : Icons.cancel,
+                  color: isRunning ? Colors.green : Colors.red,
+                ),
+                title: Text(
+                  isRunning ? "Serveur en ligne" : "Serveur arrêté",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isRunning ? Colors.green[900] : Colors.red[900],
+                  ),
+                ),
+                subtitle: isRunning
+                    ? FutureBuilder<String>(
+                        future: _getLocalIp(),
+                        builder: (context, snapshot) {
+                          return Text(
+                            snapshot.hasData
+                                ? "Adresse: http://${snapshot.data}:8080"
+                                : "Chargement...",
+                          );
+                        },
+                      )
+                    : const Text("Appuyez sur Démarrer pour lancer le serveur"),
+                trailing: ElevatedButton.icon(
+                  onPressed: isRunning ? _stopServer : _startServer,
+                  icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
+                  label: Text(isRunning ? "Arrêter" : "Démarrer"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isRunning ? Colors.red : Colors.green,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // --- Logs ---
             Expanded(
               flex: 2,
               child: Card(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const ListTile(
+                      leading: Icon(Icons.list_alt),
+                      title: Text(
+                        "Logs",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: _logs.isEmpty
+                          ? const Center(
+                              child: Text("Aucun log pour le moment"),
+                            )
+                          : ListView.builder(
+                              itemCount: _logs.length,
+                              itemBuilder: (context, index) => ListTile(
+                                dense: true,
+                                title: Text(
+                                  _logs[index],
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // --- Fichiers reçus ---
+            Expanded(
+              flex: 3,
+              child: Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const ListTile(
                       leading: Icon(Icons.folder),
@@ -216,41 +330,34 @@ class _ServerPageState extends State<ServerPage> {
                     const Divider(height: 1),
                     Expanded(
                       child: _files.isEmpty
-                          ? const Center(child: Text("Aucun fichier"))
+                          ? const Center(
+                              child: Text("Aucun fichier reçu pour le moment"),
+                            )
                           : ListView.builder(
                               itemCount: _files.length,
                               itemBuilder: (context, index) {
-                                final fileName = _files[index];
+                                final fileObj = _files[index];
+                                final encrypted = fileObj['encrypted'] == true;
+                                final owner = fileObj['owner'] ?? 'unknown';
                                 return ListTile(
-                                  leading: const Icon(Icons.insert_drive_file),
-                                  title: Text(fileName),
+                                  leading: Icon(
+                                    encrypted
+                                        ? Icons.lock
+                                        : Icons.insert_drive_file,
+                                  ),
+                                  title: Text(fileObj['name']),
+                                  subtitle: Text(
+                                    encrypted
+                                        ? "🔒 chiffré • owner: $owner"
+                                        : "non chiffré • owner: $owner",
+                                  ),
                                   trailing: PopupMenuButton<String>(
-                                    onSelected: (value) async {
-                                      if (value == 'delete') {
-                                        await _deleteFile(fileName);
-                                      } else if (value == 'rename') {
-                                        final newName = await _askNewName(
-                                          context,
-                                          fileName,
-                                        );
-                                        if (newName != null &&
-                                            newName.isNotEmpty) {
-                                          await _renameFile(fileName, newName);
-                                        }
-                                      } else if (value == 'download') {
-                                        await _downloadFileLocally(fileName);
-                                      }
+                                    onSelected: (value) {
+                                      if (value == 'download')
+                                        _downloadFile(fileObj);
                                     },
-                                    itemBuilder: (context) => [
-                                      const PopupMenuItem(
-                                        value: 'delete',
-                                        child: Text("🗑 Supprimer"),
-                                      ),
-                                      const PopupMenuItem(
-                                        value: 'rename',
-                                        child: Text("✏️ Renommer"),
-                                      ),
-                                      const PopupMenuItem(
+                                    itemBuilder: (_) => const [
+                                      PopupMenuItem(
                                         value: 'download',
                                         child: Text("⬇️ Télécharger"),
                                       ),
@@ -264,42 +371,8 @@ class _ServerPageState extends State<ServerPage> {
                 ),
               ),
             ),
-
-            const SizedBox(height: 12),
-
-            // --- Logs ---
-            Expanded(
-              flex: 1,
-              child: Card(
-                child: Column(
-                  children: [
-                    const ListTile(
-                      leading: Icon(Icons.list_alt),
-                      title: Text("Logs"),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: _logs.length,
-                        itemBuilder: (context, index) => ListTile(
-                          title: Text(
-                            _logs[index],
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: isRunning ? _stopServer : _startServer,
-        backgroundColor: isRunning ? Colors.red : Colors.green,
-        icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
-        label: Text(isRunning ? "Arrêter" : "Démarrer"),
       ),
     );
   }

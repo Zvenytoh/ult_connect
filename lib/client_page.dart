@@ -1,10 +1,14 @@
+// client_page.dart
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
 
 class ClientPage extends StatefulWidget {
   const ClientPage({super.key});
@@ -18,122 +22,219 @@ class _ClientPageState extends State<ClientPage> {
   final TextEditingController _portController = TextEditingController(
     text: "8080",
   );
-
-  List<String> _serverFiles = [];
+  final TextEditingController _passwordController =
+      TextEditingController(); // used for encrypt when sending (optional)
+  List<Map<String, dynamic>> _serverFiles = []; // {name, encrypted, owner}
   final List<String> _logs = [];
 
-  void _addLog(String msg) {
-    setState(() => _logs.add("[${DateTime.now().toIso8601String()}] $msg"));
-  }
+  void _addLog(String msg) =>
+      setState(() => _logs.add("[${DateTime.now().toIso8601String()}] $msg"));
 
-  String get _serverAddress =>
-      "${_ipController.text.trim()}:${_portController.text.trim()}";
+  Uri _filesUri(String ip, int port) => Uri.parse("http://$ip:$port/files");
+  Uri _fileGetUri(String ip, int port, String name) =>
+      Uri.parse("http://$ip:$port/files/${Uri.encodeComponent(name)}");
+  Uri _uploadUri(String ip, int port) => Uri.parse("http://$ip:$port/upload");
 
-  // --- Se connecter / récupérer fichiers ---
-  Future<void> _fetchServerFiles() async {
+  // fetch file list (list of objects)
+  Future<void> _refreshFiles() async {
     final ip = _ipController.text.trim();
     final port = int.tryParse(_portController.text.trim()) ?? 8080;
-
     if (ip.isEmpty) {
-      _addLog("❌ IP serveur non renseignée");
+      _addLog("❌ IP manquante");
+      return;
+    }
+    try {
+      final resp = await http
+          .get(_filesUri(ip, port))
+          .timeout(const Duration(seconds: 6));
+      if (resp.statusCode == 200) {
+        final list = jsonDecode(resp.body) as List<dynamic>;
+        setState(() {
+          _serverFiles = list
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+        });
+        _addLog("✅ Liste mise à jour (${_serverFiles.length})");
+      } else {
+        _addLog("❌ Erreur list : ${resp.statusCode}");
+      }
+    } catch (e) {
+      _addLog("❌ Erreur récupération liste : $e");
+    }
+  }
+
+  // send file: if password provided -> encrypt with random IV, send body = iv + ciphertext
+  Future<void> _pickAndSendFile() async {
+    final ip = _ipController.text.trim();
+    final port = int.tryParse(_portController.text.trim()) ?? 8080;
+    if (ip.isEmpty) {
+      _addLog("❌ IP manquante");
       return;
     }
 
-    try {
-      final uri = Uri.parse("http://$ip:$port/files");
-      final response = await http.get(uri);
-
-      if (response.statusCode == 200) {
-        setState(
-          () => _serverFiles = List<String>.from(jsonDecode(response.body)),
-        );
-        _addLog("✅ Liste des fichiers récupérée depuis $ip:$port");
-      } else {
-        _addLog("❌ Erreur récupération fichiers : ${response.statusCode}");
-      }
-    } catch (e) {
-      _addLog("❌ Erreur récupération fichiers : $e");
-    }
-  }
-
-  // --- Envoyer un fichier ---
-  Future<void> _pickAndSendFile() async {
     final result = await FilePicker.platform.pickFiles();
     if (result == null) return;
-
     final file = File(result.files.single.path!);
-    final ip = _ipController.text.trim();
-    final port = int.tryParse(_portController.text.trim()) ?? 8080;
-
-    if (ip.isEmpty) {
-      _addLog("❌ IP serveur non renseignée");
-      return;
-    }
+    final filename = result.files.single.name;
+    final password = _passwordController.text;
 
     try {
-      final uri = Uri.parse("http://$ip:$port/upload");
-      final request = http.MultipartRequest('POST', uri);
+      Uint8List payload = await file.readAsBytes();
 
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          file.path,
-          filename: file.path.split(Platform.pathSeparator).last,
-        ),
-      );
+      bool encryptedFlag = false;
+      if (password.trim().isNotEmpty) {
+        encryptedFlag = true;
+        final key = encrypt.Key.fromUtf8(
+          password.padRight(32).substring(0, 32),
+        );
+        final iv = encrypt.IV.fromSecureRandom(16);
+        final encrypter = encrypt.Encrypter(encrypt.AES(key));
+        final encrypted = encrypter.encryptBytes(payload, iv: iv);
+        // body = iv (16 bytes) || ciphertext
+        payload = Uint8List.fromList(iv.bytes + encrypted.bytes);
+      }
 
-      final response = await request.send();
-      final respBody = await response.stream.bytesToString();
-      _addLog(respBody);
+      final req = http.Request('POST', _uploadUri(ip, port));
+      req.headers['x-filename'] = filename;
+      req.headers['x-encrypted'] = encryptedFlag ? '1' : '0';
+      req.bodyBytes = payload;
 
-      // Rafraîchir la liste après envoi
-      await _fetchServerFiles();
+      final streamedResp = await req.send();
+      final text = await streamedResp.stream.bytesToString();
+      if (streamedResp.statusCode == 200) {
+        _addLog("✅ Envoi OK : $filename (encrypted: $encryptedFlag)");
+        await _refreshFiles();
+      } else {
+        _addLog("❌ Envoi échoué : ${streamedResp.statusCode} $text");
+      }
     } catch (e) {
-      _addLog("❌ Erreur envoi fichier : $e");
+      _addLog("❌ Erreur envoi : $e");
     }
   }
 
-  // --- Télécharger un fichier ---
-  Future<void> _downloadFile(String fileName) async {
+  // download raw bytes then if encrypted ask for password and attempt decrypt locally
+  Future<void> _downloadAndMaybeDecrypt(Map<String, dynamic> fileObj) async {
+    final ip = _ipController.text.trim();
+    final port = int.tryParse(_portController.text.trim()) ?? 8080;
+    final name = fileObj['name'] as String;
+    final encrypted = fileObj['encrypted'] == true;
+
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/$fileName');
-
-      final url =
-          "http://${_ipController.text.trim()}:${_portController.text.trim()}/files/$fileName";
-      final request = await HttpClient().getUrl(Uri.parse(url));
+      final request = await HttpClient().getUrl(_fileGetUri(ip, port, name));
       final response = await request.close();
-      final bytes = await consolidateHttpClientResponseBytes(response);
-      await file.writeAsBytes(bytes);
-
-      _addLog("📥 Fichier téléchargé : $fileName");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("📥 Fichier téléchargé : ${file.path}")),
-        );
+      if (response.statusCode != 200) {
+        _addLog("❌ Erreur téléchargement ${response.statusCode}");
+        return;
       }
+      final raw = await consolidateHttpClientResponseBytes(response);
+
+      Uint8List dataToSave;
+
+      if (!encrypted) {
+        dataToSave = Uint8List.fromList(raw);
+      } else {
+        // ask password
+        final password = await showDialog<String>(
+          context: context,
+          builder: (ctx) {
+            final ctrl = TextEditingController();
+            return AlertDialog(
+              title: const Text("Mot de passe requis"),
+              content: TextField(
+                controller: ctrl,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: "Mot de passe"),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text("Annuler"),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, ctrl.text),
+                  child: const Text("Valider"),
+                ),
+              ],
+            );
+          },
+        );
+        if (password == null || password.isEmpty) {
+          _addLog("❌ Téléchargement annulé (mot de passe non fourni)");
+          return;
+        }
+
+        // extract IV and ciphertext
+        if (raw.length < 16) {
+          _addLog("❌ Contenu invalide (trop court)");
+          return;
+        }
+        final ivBytes = raw.sublist(0, 16);
+        final cipher = raw.sublist(16);
+
+        try {
+          final key = encrypt.Key.fromUtf8(
+            password.padRight(32).substring(0, 32),
+          );
+          final iv = encrypt.IV(ivBytes);
+          final encrypter = encrypt.Encrypter(encrypt.AES(key));
+          final decrypted = encrypter.decryptBytes(
+            encrypt.Encrypted(cipher),
+            iv: iv,
+          );
+          dataToSave = Uint8List.fromList(decrypted);
+        } catch (e) {
+          _addLog("❌ Déchiffrement échoué (mot de passe incorrect ?) : $e");
+          if (mounted)
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Mot de passe incorrect ou fichier corrompu"),
+              ),
+            );
+          return;
+        }
+      }
+
+      // save to device documents
+      final docs = await getApplicationDocumentsDirectory();
+      final out = File(path.join(docs.path, name));
+      await out.writeAsBytes(dataToSave, flush: true);
+      _addLog("📥 Fichier téléchargé & enregistré: ${out.path}");
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Téléchargé : ${out.path}")));
     } catch (e) {
-      _addLog("❌ Erreur téléchargement : $e");
+      _addLog("❌ Erreur téléchargement/déchiffrement : $e");
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    _ipController.dispose();
+    _portController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Client - Fichiers Serveur")),
+      appBar: AppBar(title: const Text("Client")),
       body: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            // --- IP / Port / Connecter / Envoyer ---
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _ipController,
-                    decoration: const InputDecoration(
-                      labelText: "IP du serveur",
-                    ),
+                    decoration: const InputDecoration(labelText: "IP"),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -147,56 +248,74 @@ class _ClientPageState extends State<ClientPage> {
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  onPressed: _fetchServerFiles,
+                  onPressed: _refreshFiles,
                   child: const Text("Connecter"),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton(
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _passwordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: "Mot de passe (pour chiffrer à l'envoi)",
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                ElevatedButton.icon(
                   onPressed: _pickAndSendFile,
-                  child: const Text("Envoyer"),
+                  icon: const Icon(Icons.upload_file),
+                  label: const Text("Envoyer (chiffrer si mdp)"),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _fetchServerFiles,
-                  child: const Text("Actualiser"),
+                ElevatedButton.icon(
+                  onPressed: _refreshFiles,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text("Actualiser"),
                 ),
               ],
             ),
             const SizedBox(height: 12),
 
-            // --- Fichiers serveur ---
+            // files list
             Expanded(
-              flex: 2,
+              flex: 3,
               child: Card(
                 child: Column(
                   children: [
                     const ListTile(
                       leading: Icon(Icons.folder),
-                      title: Text(
-                        "Fichiers disponibles sur le serveur",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                      title: Text("Fichiers serveur"),
                     ),
                     const Divider(height: 1),
                     Expanded(
                       child: _serverFiles.isEmpty
-                          ? const Center(
-                              child: Text("Aucun fichier disponible"),
-                            )
+                          ? const Center(child: Text("Aucun fichier"))
                           : ListView.builder(
                               itemCount: _serverFiles.length,
-                              itemBuilder: (context, index) {
-                                final fileName = _serverFiles[index];
+                              itemBuilder: (c, i) {
+                                final f = _serverFiles[i];
+                                final encrypted = f['encrypted'] == true;
                                 return ListTile(
-                                  leading: const Icon(Icons.insert_drive_file),
-                                  title: Text(fileName),
+                                  leading: Icon(
+                                    encrypted
+                                        ? Icons.lock
+                                        : Icons.insert_drive_file,
+                                  ),
+                                  title: Text(f['name'] as String),
+                                  subtitle: Text(
+                                    encrypted
+                                        ? "🔒 chiffré • owner: ${f['owner']}"
+                                        : "non chiffré • owner: ${f['owner']}",
+                                  ),
                                   trailing: PopupMenuButton<String>(
-                                    onSelected: (value) async {
-                                      if (value == 'download') {
-                                        await _downloadFile(fileName);
-                                      }
+                                    onSelected: (v) {
+                                      if (v == 'download')
+                                        _downloadAndMaybeDecrypt(f);
                                     },
-                                    itemBuilder: (context) => const [
+                                    itemBuilder: (_) => const [
                                       PopupMenuItem(
                                         value: 'download',
                                         child: Text("⬇️ Télécharger"),
@@ -214,30 +333,25 @@ class _ClientPageState extends State<ClientPage> {
 
             const SizedBox(height: 12),
 
-            // --- Logs ---
+            // logs
             Expanded(
-              flex: 1,
+              flex: 2,
               child: Card(
                 child: Column(
                   children: [
                     const ListTile(
-                      leading: Icon(Icons.list_alt),
+                      leading: Icon(Icons.list),
                       title: Text("Logs"),
                     ),
                     const Divider(height: 1),
                     Expanded(
                       child: _logs.isEmpty
-                          ? const Center(
-                              child: Text("Aucun log pour le moment"),
-                            )
+                          ? const Center(child: Text("Aucun log"))
                           : ListView.builder(
                               itemCount: _logs.length,
-                              itemBuilder: (context, index) => ListTile(
-                                dense: true,
-                                title: Text(
-                                  _logs[index],
-                                  style: const TextStyle(fontSize: 12),
-                                ),
+                              itemBuilder: (c, i) => Text(
+                                _logs[i],
+                                style: const TextStyle(fontSize: 12),
                               ),
                             ),
                     ),

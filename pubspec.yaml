@@ -33,13 +33,15 @@ dependencies:
 
   # Pour sélectionner des fichiers sur le client
   file_picker: ^6.1.0
+  mime: ^2.0.0
+
 
   # Pour envoyer des fichiers HTTP côté client
   http: ^1.1.0
 
   # Pour manipuler les chemins de fichiers
   path: ^1.9.0
-
+  encrypt: ^5.0.1 
   path_provider: ^2.0.15
 
   # The following adds the Cupertino Icons font to your application.

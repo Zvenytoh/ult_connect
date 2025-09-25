@@ -1,8 +1,0 @@
---dart-http-boundary-+ga7bVXl3g03_..ioIVc1OWvI3cXZbCScUbI5LhFE6oDhhZTvIa
-content-type: application/octet-stream
-content-disposition: form-data; name="file"; filename="testClient.txt"
-
-TEST ENVOIE FICHIER DEPUIS CLIENT A SERVER
-
-
---dart-http-boundary-+ga7bVXl3g03_..ioIVc1OWvI3cXZbCScUbI5LhFE6oDhhZTvIa--
