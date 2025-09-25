@@ -3,6 +3,7 @@ import 'package:ult_connect/file_manager_page.dart';
 import 'digital_identity_page.dart';
 import 'host_page.dart';
 import 'find_host_page.dart';
+import 'inventory_page.dart'; // <-- importe ta nouvelle page
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -25,7 +26,8 @@ class HomePage extends StatelessWidget {
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => DigitalIdentityPage()),
+                    MaterialPageRoute(
+                        builder: (context) => DigitalIdentityPage()),
                   );
                 },
                 child: const Padding(
@@ -34,15 +36,16 @@ class HomePage extends StatelessWidget {
                     children: [
                       Icon(Icons.badge, size: 40),
                       SizedBox(height: 10),
-                      Text('Identité Numérique', style: TextStyle(fontSize: 16)),
+                      Text('Identité Numérique',
+                          style: TextStyle(fontSize: 16)),
                     ],
                   ),
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 30),
-            
+
             // Bouton Être le Host
             SizedBox(
               width: 250,
@@ -68,9 +71,9 @@ class HomePage extends StatelessWidget {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 30),
-            
+
             // Bouton Trouver un Host
             SizedBox(
               width: 250,
@@ -96,6 +99,10 @@ class HomePage extends StatelessWidget {
                 ),
               ),
             ),
+
+            const SizedBox(height: 30),
+
+            // Bouton Gestionnaire de Fichiers
             SizedBox(
               width: 250,
               child: ElevatedButton(
@@ -112,9 +119,37 @@ class HomePage extends StatelessWidget {
                   padding: EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      Icon(Icons.computer, size: 40),
+                      Icon(Icons.folder, size: 40),
                       SizedBox(height: 10),
-                      Text('FICHIER MA GUEULE', style: TextStyle(fontSize: 16)),
+                      Text('Fichiers', style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 30),
+
+            // 🚀 Nouveau bouton Inventaire
+            SizedBox(
+              width: 250,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => InventoryPage()),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Icon(Icons.inventory, size: 40),
+                      SizedBox(height: 10),
+                      Text('Inventaire', style: TextStyle(fontSize: 16)),
                     ],
                   ),
                 ),
