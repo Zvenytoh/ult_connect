@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'dart:convert';
-
-import 'package:http/http.dart' as http;
 
 class ClientPage extends StatefulWidget {
   const ClientPage({super.key});
@@ -20,9 +19,8 @@ class _ClientPageState extends State<ClientPage> {
   final List<String> _logs = [];
   List<String> _serverFiles = [];
 
-  void _addLog(String msg) {
-    setState(() => _logs.add("[${DateTime.now().toIso8601String()}] $msg"));
-  }
+  void _addLog(String msg) =>
+      setState(() => _logs.add("[${DateTime.now().toIso8601String()}] $msg"));
 
   Future<void> _pickAndSendFile() async {
     final result = await FilePicker.platform.pickFiles();
@@ -35,11 +33,20 @@ class _ClientPageState extends State<ClientPage> {
     try {
       final uri = Uri.parse("http://$ip:$port/upload");
       final request = http.MultipartRequest('POST', uri);
-      request.files.add(await http.MultipartFile.fromPath('file', file.path));
+
+      // Garder le nom original du fichier
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          file.path,
+          filename: file.path.split(Platform.pathSeparator).last,
+        ),
+      );
 
       final response = await request.send();
       final respBody = await response.stream.bytesToString();
       _addLog(respBody);
+
       _listServerFiles();
     } catch (e) {
       _addLog("❌ Erreur envoi fichier : $e");
@@ -49,9 +56,11 @@ class _ClientPageState extends State<ClientPage> {
   Future<void> _listServerFiles() async {
     final ip = _ipController.text.trim();
     final port = int.tryParse(_portController.text.trim()) ?? 8080;
+
     try {
       final uri = Uri.parse("http://$ip:$port/files");
       final response = await http.get(uri);
+
       if (response.statusCode == 200) {
         setState(
           () => _serverFiles = List<String>.from(jsonDecode(response.body)),

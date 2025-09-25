@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 
@@ -38,21 +39,39 @@ class _ServerPageState extends State<ServerPage> {
             request.connectionInfo?.remoteAddress.address ?? "inconnu";
 
         if (request.method == 'POST' && request.uri.path == '/upload') {
-          final bytes = await request.fold<List<int>>(
-            [],
-            (prev, e) => prev..addAll(e),
-          );
-          final filename = 'file_${DateTime.now().millisecondsSinceEpoch}';
-          final file = File(path.join(storageDir, filename));
-          await file.writeAsBytes(bytes);
-          _addLog("💾 Fichier reçu de $clientIp: $filename");
-          request.response.write("✅ Fichier reçu !");
-          await request.response.close();
-          _updateFilesList();
+          try {
+            // Lire les bytes envoyés
+            final bytes = await request.fold<List<int>>(
+              [],
+              (prev, element) => prev..addAll(element),
+            );
+
+            // Extraire le nom de fichier depuis les headers si dispo
+            final contentDisp = request.headers.value('content-disposition');
+            String filename = 'file_${DateTime.now().millisecondsSinceEpoch}';
+            if (contentDisp != null && contentDisp.contains('filename=')) {
+              filename = contentDisp.split('filename=')[1].replaceAll('"', '');
+            }
+
+            // Sauvegarde du fichier
+            final file = File(path.join(storageDir, filename));
+            await file.writeAsBytes(bytes);
+
+            _addLog("💾 Fichier reçu de $clientIp: $filename");
+            request.response.write("✅ Fichier reçu !");
+            await request.response.close();
+
+            _updateFilesList();
+          } catch (e) {
+            _addLog("❌ Erreur réception fichier: $e");
+            request.response.statusCode = HttpStatus.internalServerError;
+            await request.response.close();
+          }
         } else if (request.method == 'GET' && request.uri.path == '/files') {
+          // Liste des fichiers
           request.response
             ..headers.contentType = ContentType.json
-            ..write(_files);
+            ..write(jsonEncode(_files));
           await request.response.close();
         } else {
           request.response.write("Serveur actif");
@@ -80,8 +99,9 @@ class _ServerPageState extends State<ServerPage> {
               .toList()
         : [];
     setState(() {
-      _files.clear();
-      _files.addAll(list as Iterable<String>);
+      _files
+        ..clear()
+        ..addAll(list as Iterable<String>);
     });
   }
 

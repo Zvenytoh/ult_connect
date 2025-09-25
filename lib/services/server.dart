@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'package:path/path.dart' as path;
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 
 class SimpleServer {
   HttpServer? _server;
@@ -14,9 +14,8 @@ class SimpleServer {
     if (!dir.existsSync()) dir.createSync(recursive: true);
   }
 
-  void _addLog(String msg) {
-    onLog?.call("[${DateTime.now().toIso8601String()}] $msg");
-  }
+  void _addLog(String msg) =>
+      onLog?.call("[${DateTime.now().toIso8601String()}] $msg");
 
   Future<void> start({int port = 8080}) async {
     if (_server != null) {
@@ -33,14 +32,27 @@ class SimpleServer {
             request.connectionInfo?.remoteAddress.address ?? "inconnu";
 
         if (request.method == 'POST' && request.uri.path == '/upload') {
-          // Lecture du fichier en bytes
+          // Lecture des bytes du fichier
           final bytes = await consolidateHttpClientResponseBytes(
             request as HttpClientResponse,
           );
-          final filename = 'file_${DateTime.now().millisecondsSinceEpoch}';
+
+          // Récupération du nom original depuis les headers
+          String filename = 'file_${DateTime.now().millisecondsSinceEpoch}';
+          final contentDisposition = request.headers.value(
+            'content-disposition',
+          );
+          if (contentDisposition != null) {
+            final match = RegExp(
+              r'filename="(.+)"',
+            ).firstMatch(contentDisposition);
+            if (match != null) filename = match.group(1)!;
+          }
+
           final file = File(path.join(storageDir, filename));
           await file.writeAsBytes(bytes);
-          _addLog("💾 Fichier reçu de $clientIp: $filename");
+          _addLog("💾 Fichier reçu de $clientIp : $filename");
+
           request.response.write("✅ Fichier reçu !");
           await request.response.close();
         } else if (request.method == 'GET' && request.uri.path == '/files') {
