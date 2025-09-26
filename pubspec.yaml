@@ -1,5 +1,5 @@
 name: ult_connect
-description: "A new Flutter project."
+description: "Une application de transfert de fichiers chiffrés via réseau local"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.9.2
+  sdk: '>=3.0.0 <4.0.0'
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -32,7 +32,7 @@ dependencies:
     sdk: flutter
 
   # Pour sélectionner des fichiers sur le client
-  file_picker: ^6.1.0
+
   mime: ^2.0.0
 
 
@@ -42,11 +42,20 @@ dependencies:
   # Pour manipuler les chemins de fichiers
   path: ^1.9.0
   encrypt: ^5.0.1 
-  path_provider: ^2.0.15
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
+  shared_preferences: ^2.2.2
+  flutter_bluetooth_serial: ^0.4.0
+  permission_handler: ^11.0.1
   cupertino_icons: ^1.0.8
+  
+
+  # Dépendances pour le transfert de fichiers
+  path_provider: ^2.1.1
+  file_picker: ^6.1.1
+  crypto: ^3.0.3
+  open_filex: ^4.7.0
 
 dev_dependencies:
   flutter_test:

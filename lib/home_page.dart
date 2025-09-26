@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:ult_connect/digital_identity_page.dart';
 import 'package:ult_connect/client_page.dart';
-import 'package:ult_connect/server_page.dart'; // <-- Page pour gérer le serveur
+import 'package:ult_connect/server_page.dart';
+import 'package:ult_connect/file_manager_page.dart';
+import 'service/bluetooth_page.dart';
+import 'inventory_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -26,54 +29,73 @@ class HomePage extends StatelessWidget {
             end: Alignment.bottomCenter,
           ),
         ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: GridView.count(
+            crossAxisCount: MediaQuery.of(context).size.width > 600 ? 3 : 2,
+            mainAxisSpacing: 20,
+            crossAxisSpacing: 20,
             children: [
-              // Identité Numérique
-              _buildMenuCard(
-                context,
-                icon: Icons.badge,
-                label: "Identité Numérique",
-                color: Colors.blue.shade600,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => DigitalIdentityPage(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-
-              // Démarrer Serveur
               _buildMenuCard(
                 context,
                 icon: Icons.computer,
                 label: "Démarrer Serveur",
                 color: Colors.green.shade600,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => ServerPage()),
-                  );
-                },
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ServerPage()),
+                ),
               ),
-              const SizedBox(height: 20),
-
-              // Trouver un Host (Client)
               _buildMenuCard(
                 context,
                 icon: Icons.search,
                 label: "Trouver un Host",
                 color: Colors.orange.shade600,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => ClientPage()),
-                  );
-                },
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ClientPage()),
+                ),
+              ),
+              _buildMenuCard(
+                context,
+                icon: Icons.badge,
+                label: "Identité Numérique",
+                color: Colors.blue.shade700,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const DigitalIdentityPage()),
+                ),
+              ),
+              _buildMenuCard(
+                context,
+                icon: Icons.bluetooth,
+                label: "Échange Bluetooth",
+                color: Colors.purple.shade600,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const BluetoothPage()),
+                ),
+              ),
+              _buildMenuCard(
+                context,
+                icon: Icons.folder,
+                label: "Fichiers",
+                color: Colors.green.shade700,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const FileManagerPage()),
+                ),
+              ),
+              _buildMenuCard(
+                context,
+                icon: Icons.inventory,
+                label: "Inventaire",
+                color: Colors.teal.shade700,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const InventoryPage()),
+                ),
               ),
             ],
           ),
@@ -89,23 +111,22 @@ class HomePage extends StatelessWidget {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return SizedBox(
-      width: 280,
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        elevation: 6,
-        child: ElevatedButton(
-          onPressed: onTap,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: color,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            padding: const EdgeInsets.all(20),
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 6,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(16),
           ),
+          padding: const EdgeInsets.all(20),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 42, color: Colors.white),
+              Icon(icon, size: 48, color: Colors.white),
               const SizedBox(height: 12),
               Text(
                 label,
