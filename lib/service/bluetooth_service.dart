@@ -93,9 +93,9 @@ class BluetoothService {
   static Future<List<BluetoothDevice>> scanDevices() async {
     try {
       List<BluetoothDevice> devices = [];
-      
+
       // Appareils appairés
-      List<BluetoothDevice> pairedDevices = 
+      List<BluetoothDevice> pairedDevices =
           await FlutterBluetoothSerial.instance.getBondedDevices();
       devices.addAll(pairedDevices);
 
@@ -112,13 +112,13 @@ class BluetoothService {
       _connection = await BluetoothConnection.toAddress(device.address);
       _isConnected = true;
       _connectedDeviceName = device.name ?? 'Appareil inconnu';
-      
+
       // Écouter les données reçues
       _connection!.input!.listen(_onDataReceived).onDone(() {
         print('Connexion fermée');
         disconnect();
       });
-      
+
       return true;
     } catch (e) {
       print('Erreur connexion: $e');
@@ -148,10 +148,10 @@ class BluetoothService {
         'type': 'digital_identity',
         'data': identity.toJson(),
       });
-      
-      _connection!.output.add(Uint8List.fromList(utf8.encode(jsonData + '\n')));
+
+      _connection!.output.add(Uint8List.fromList(utf8.encode('$jsonData\n')));
       await _connection!.output.allSent;
-      
+
       return true;
     } catch (e) {
       print('Erreur envoi données: $e');
@@ -164,9 +164,10 @@ class BluetoothService {
     try {
       String receivedString = utf8.decode(data);
       Map<String, dynamic> receivedData = jsonDecode(receivedString.trim());
-      
+
       if (receivedData['type'] == 'digital_identity') {
-        DigitalIdentity identity = DigitalIdentity.fromJson(receivedData['data']);
+        DigitalIdentity identity =
+            DigitalIdentity.fromJson(receivedData['data']);
         onDataReceived?.call(identity);
       }
     } catch (e) {

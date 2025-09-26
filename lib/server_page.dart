@@ -50,8 +50,7 @@ class _ServerPageState extends State<ServerPage> {
               (prev, element) => prev..addAll(element),
             );
 
-            final filename =
-                request.headers.value('x-filename') ??
+            final filename = request.headers.value('x-filename') ??
                 'file_${DateTime.now().millisecondsSinceEpoch}';
             final encryptedFlag = request.headers.value('x-encrypted') == '1';
             final owner = clientIp;
@@ -378,10 +377,12 @@ class _ServerPageState extends State<ServerPage> {
                                   ),
                                   trailing: PopupMenuButton<String>(
                                     onSelected: (v) async {
-                                      if (v == 'download')
+                                      if (v == 'download') {
                                         await _downloadFile(f);
-                                      if (v == 'delete')
+                                      }
+                                      if (v == 'delete') {
                                         await _deleteFile(f['name']);
+                                      }
                                       if (v == 'rename') {
                                         final ctrl = TextEditingController();
                                         await showDialog(

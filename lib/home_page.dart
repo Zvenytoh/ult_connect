@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:ult_connect/digital_identity_page.dart';
 import 'package:ult_connect/client_page.dart';
 import 'package:ult_connect/server_page.dart';
-import 'package:ult_connect/file_manager_page.dart';
 import 'service/bluetooth_page.dart';
 import 'inventory_page.dart';
 
@@ -69,32 +68,13 @@ class HomePage extends StatelessWidget {
               ),
               _buildMenuCard(
                 context,
-                icon: Icons.bluetooth,
-                label: "Échange Bluetooth",
-                color: Colors.purple.shade600,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const BluetoothPage()),
-                ),
-              ),
-              _buildMenuCard(
-                context,
-                icon: Icons.folder,
-                label: "Fichiers",
-                color: Colors.green.shade700,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const FileManagerPage()),
-                ),
-              ),
-              _buildMenuCard(
-                context,
                 icon: Icons.inventory,
                 label: "Inventaire",
                 color: Colors.teal.shade700,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const InventoryPage()),
+                  MaterialPageRoute(
+                      builder: (context) => const InventoryPage()),
                 ),
               ),
             ],

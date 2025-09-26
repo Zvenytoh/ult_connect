@@ -50,9 +50,8 @@ class _ClientPageState extends State<ClientPage> {
       if (resp.statusCode == 200) {
         final list = jsonDecode(resp.body) as List<dynamic>;
         setState(() {
-          _serverFiles = list
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList();
+          _serverFiles =
+              list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
         });
         _addLog("✅ Liste mise à jour (${_serverFiles.length})");
       } else {
@@ -184,12 +183,13 @@ class _ClientPageState extends State<ClientPage> {
           dataToSave = Uint8List.fromList(decrypted);
         } catch (e) {
           _addLog("❌ Déchiffrement échoué (mot de passe incorrect ?) : $e");
-          if (mounted)
+          if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text("Mot de passe incorrect ou fichier corrompu"),
               ),
             );
+          }
           return;
         }
       }
@@ -199,10 +199,11 @@ class _ClientPageState extends State<ClientPage> {
       final out = File(path.join(docs.path, name));
       await out.writeAsBytes(dataToSave, flush: true);
       _addLog("📥 Fichier téléchargé & enregistré: ${out.path}");
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("Téléchargé : ${out.path}")));
+      }
     } catch (e) {
       _addLog("❌ Erreur téléchargement/déchiffrement : $e");
     }
@@ -312,8 +313,9 @@ class _ClientPageState extends State<ClientPage> {
                                   ),
                                   trailing: PopupMenuButton<String>(
                                     onSelected: (v) {
-                                      if (v == 'download')
+                                      if (v == 'download') {
                                         _downloadAndMaybeDecrypt(f);
+                                      }
                                     },
                                     itemBuilder: (_) => const [
                                       PopupMenuItem(

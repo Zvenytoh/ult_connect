@@ -16,7 +16,7 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
   final TextEditingController _heightController = TextEditingController();
   final TextEditingController _nationalityController = TextEditingController();
   final TextEditingController _birthDateController = TextEditingController();
-  
+
   String _selectedBloodType = 'Non spécifié';
   final List<String> _bloodTypes = [
     'Non spécifié',
@@ -40,7 +40,7 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
   void _loadSavedData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      
+
       setState(() {
         _nameController.text = prefs.getString('name') ?? '';
         _emailController.text = prefs.getString('email') ?? '';
@@ -60,7 +60,7 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
   void _saveIdentity() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      
+
       await prefs.setString('name', _nameController.text);
       await prefs.setString('email', _emailController.text);
       await prefs.setString('phone', _phoneController.text);
@@ -69,9 +69,9 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
       await prefs.setString('nationality', _nationalityController.text);
       await prefs.setString('birthDate', _birthDateController.text);
       await prefs.setString('bloodType', _selectedBloodType);
-      
+
       await prefs.reload();
-      
+
       print('Sauvegarde réussie avec tous les champs');
 
       if (mounted) {
@@ -104,10 +104,11 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
       lastDate: DateTime.now(),
       locale: const Locale('fr'),
     );
-    
+
     if (picked != null) {
       setState(() {
-        _birthDateController.text = '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
+        _birthDateController.text =
+            '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
       });
     }
   }
@@ -152,22 +153,26 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
               child: CircleAvatar(
                 radius: 50,
                 backgroundColor: Colors.grey[300],
-                child: const Icon(Icons.camera_alt, size: 40, color: Colors.grey),
+                child:
+                    const Icon(Icons.camera_alt, size: 40, color: Colors.grey),
               ),
             ),
-            
+
             const SizedBox(height: 30),
-            
+
             // Section Informations personnelles
             const Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 'Informations personnelles',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue),
               ),
             ),
             const SizedBox(height: 15),
-            
+
             // Nom complet
             TextField(
               controller: _nameController,
@@ -177,9 +182,9 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
                 prefixIcon: Icon(Icons.person),
               ),
             ),
-            
+
             const SizedBox(height: 15),
-            
+
             // Email
             TextField(
               controller: _emailController,
@@ -190,9 +195,9 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
               ),
               keyboardType: TextInputType.emailAddress,
             ),
-            
+
             const SizedBox(height: 15),
-            
+
             // Téléphone
             TextField(
               controller: _phoneController,
@@ -203,9 +208,9 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
               ),
               keyboardType: TextInputType.phone,
             ),
-            
+
             const SizedBox(height: 15),
-            
+
             // Date de naissance
             TextField(
               controller: _birthDateController,
@@ -218,9 +223,9 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
               readOnly: true,
               onTap: _selectBirthDate,
             ),
-            
+
             const SizedBox(height: 15),
-            
+
             // Nationalité
             TextField(
               controller: _nationalityController,
@@ -230,19 +235,22 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
                 prefixIcon: Icon(Icons.flag),
               ),
             ),
-            
+
             const SizedBox(height: 30),
-            
+
             // Section Informations physiques
             const Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 'Informations physiques',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green),
               ),
             ),
             const SizedBox(height: 15),
-            
+
             // Poids et Taille sur la même ligne
             Row(
               children: [
@@ -271,22 +279,25 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 30),
-            
+
             // Section Informations médicales
             const Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 'Informations médicales',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red),
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red),
               ),
             ),
             const SizedBox(height: 15),
-            
+
             // Groupe sanguin
             DropdownButtonFormField<String>(
-              value: _selectedBloodType,
+              initialValue: _selectedBloodType,
               decoration: const InputDecoration(
                 labelText: 'Groupe sanguin',
                 border: OutlineInputBorder(),
@@ -306,9 +317,9 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
                 }
               },
             ),
-            
+
             const SizedBox(height: 30),
-            
+
             // Bouton sauvegarder
             ElevatedButton(
               onPressed: _saveIdentity,
@@ -322,9 +333,9 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
                 style: TextStyle(fontSize: 16),
               ),
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             // Bouton de vérification (pour debug)
             ElevatedButton(
               onPressed: _checkSavedData,
@@ -355,4 +366,4 @@ class _DigitalIdentityPageState extends State<DigitalIdentityPage> {
     _birthDateController.dispose();
     super.dispose();
   }
-} 
+}
