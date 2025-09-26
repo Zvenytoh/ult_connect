@@ -95,7 +95,6 @@ class HomePage extends StatelessWidget {
                     padding: EdgeInsets.all(16),
                     child: Column(
                       children: [
-                        
                         SizedBox(height: 10),
                         Text('Être le Host', style: TextStyle(fontSize: 16)),
                       ],
